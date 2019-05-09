@@ -32,7 +32,7 @@ typedef struct thread_pool {
     int numOfThreads;
 
     //flags
-    int toDestroyed;
+    int isDestroyed;
     int blockNewTasks;
     int emptyTheQueue;
 
