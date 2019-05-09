@@ -155,7 +155,14 @@ void tpDestroy(ThreadPool *threadPool, int shouldWaitForTasks) {
 
 }
 
-int tpInsertTask(ThreadPool *threadPool, void (*computeFunc)(void *), void *param) {
+/**
+ *
+ * @param threadPool threadPool of the mission
+ * @param computeFunc the func we wanna the task will run
+ * @param param the params of the task
+ * @return 0 - if the function successed, -1 otherwise
+ */
+int tpInsertTask(ThreadPool *threadPool, void (*computeFunc)(void *), void *param){
 
 }
 
