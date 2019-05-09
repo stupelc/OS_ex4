@@ -5,14 +5,12 @@
 #include <memory.h>
 #include "threadPool.h"
 
-
 /**
  * print an error message
  */
 void PrintError() {
     write(2, "Error in system call\n", strlen("Error in system call\n"));
 }
-
 
 /**
  *
@@ -67,7 +65,6 @@ void executeTasks(void *args) {
 
             status = pthread_cond_wait(&threadPool->cond, &threadPool->mutexTasksQueueu);
             checkSuccess(threadPool, status);
-
         }
 
         status = pthread_mutex_unlock(&threadPool->mutexTasksQueueu);
@@ -162,8 +159,39 @@ void tpDestroy(ThreadPool *threadPool, int shouldWaitForTasks) {
  * @param param the params of the task
  * @return 0 - if the function successed, -1 otherwise
  */
-int tpInsertTask(ThreadPool *threadPool, void (*computeFunc)(void *), void *param){
+int tpInsertTask(ThreadPool *threadPool, void (*computeFunc)(void *), void *param) {
 
+    //check if the threadpool is destroyed or can't get new tasks.
+    if (threadPool->isDestroyed || threadPool->blockNewTasks) {
+        return FAIL;
+    }
+
+    //crete the mession
+    Task *task = malloc(sizeof(Task));
+    //check if the allocation have been failed.
+    if (task == NULL) {
+        PrintError();
+    }
+    task->args = param;
+    task->func = computeFunc;
+
+    //lock the mutex to the queue.
+    int status;
+    status = pthread_mutex_lock(&threadPool->mutexQueue);
+    checkSuccess(threadPool, status);
+
+    //add the mession to the queue
+    osEnqueue(threadPool->tasksQueue, task);
+
+    //unlock the mutex to the queue.
+    status = pthread_mutex_unlock(&threadPool->mutexQueue);
+    checkSuccess(threadPool, status);
+
+    //wake up thread.
+    status = pthread_cond_signal(&threadPool->cond);
+    checkSuccess(threadPool,status);
+
+    return SUCCESS;
 }
 
 
