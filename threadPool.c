@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <memory.h>
+#include <stdio.h>
 #include "threadPool.h"
 
 /**
@@ -22,6 +23,11 @@ void *execute(void *arg) {
     threadPool->executeTasks(arg);
 }
 
+/**
+ *
+ * @param threadPool a pointer to our threadPool
+ * @param num the status of a specific function
+ */
 void checkSuccess(ThreadPool *threadPool, int num) {
     if (num != SUCCESS) {
         PrintError();
@@ -31,6 +37,11 @@ void checkSuccess(ThreadPool *threadPool, int num) {
 
 }
 
+/**
+ *
+ * @param args
+ * runs the tasks
+ */
 void executeTasks(void *args) {
     ThreadPool *threadPool = (ThreadPool *) args;
     if (threadPool == NULL) {
@@ -148,8 +159,141 @@ void initializeParamOfStrucr(ThreadPool *threadPool, int numOfThreads) {
     }
 }
 
-void tpDestroy(ThreadPool *threadPool, int shouldWaitForTasks) {
+/**
+ *
+ * @param arg pretend to be a threadPool
+ * wait for all the threads to finish
+ */
+void waitForAllThreads(void *arg) {
+    int i;
+    ThreadPool *threadPool = (ThreadPool *) arg;
+    //loop that run all over the threads and wait for them to finish their task.
+    for (i = 0; i < threadPool->numOfThreads; i++) {
+        if (pthread_join(threadPool->threads[i], NULL)!=0){
+            PrintError();
+            _exit(EXIT_FAILURE);
+        }
+    }
+}
 
+//check if the mission queue is empty
+int missionQueueEmpty(ThreadPool* tp) {
+    //lock the queue
+    int status;
+    status = pthread_mutex_lock(&tp->mutexTasksQueueu);
+    checkSuccess(tp,status);
+    //check if the queue is empty
+    int isEmpty = osIsQueueEmpty(tp->tasksQueue);
+    //unlock the queue
+    status = pthread_mutex_unlock(&tp->mutexTasksQueueu);
+    checkSuccess(tp,status);
+
+    return isEmpty;
+}
+
+//get a new mission from the mission queue
+Task* getMissionFromQueue(ThreadPool* tp) {
+    //lock the queue
+    int status;
+    status = pthread_mutex_lock(&tp->mutexTasksQueueu);
+    checkSuccess(tp,status);
+
+    //add the mission to the queue
+    Task* task = (Task*) osDequeue(tp->tasksQueue);
+
+    //unlock the queue
+    status = pthread_mutex_unlock(&tp->mutexTasksQueueu);
+    checkSuccess(tp,status);
+    return task;
+}
+
+/**
+ *
+ * @param threadPool treadPool of the mission
+ * @param shouldWaitForTasks 0-wait until all the tasks will stop running without running the task in the queue
+ * otherwise wait until all the task, also those in the queue, will finish running
+ */
+void tpDestroy(ThreadPool *threadPool, int shouldWaitForTasks) {
+    //check if this function have been call
+    if (threadPool->isDestroyed) {
+        return;
+    }
+    //cant get new tasks from now
+    threadPool->blockNewTasks = TRUE;
+
+    //lock this critical section.
+    if (pthread_mutex_lock(&threadPool->mutexTasksQueueu) != 0) {
+        PrintError();
+        _exit(EXIT_FAILURE);
+    }
+    //wake up the threadPool
+    if (pthread_cond_broadcast(&threadPool->cond) != 0) {
+        PrintError();
+    }
+    if (pthread_mutex_unlock(&threadPool->mutexTasksQueueu) != 0) {
+        PrintError();
+        _exit(EXIT_FAILURE);
+    }
+
+    if (shouldWaitForTasks == 1) {
+        if (pthread_mutex_lock(&threadPool->mutexEmpty) != 0) {
+            PrintError();
+            _exit(EXIT_FAILURE);
+        }
+        threadPool->emptyTheQueue = TRUE; //we don't wanna run tasks from the queue anymore
+
+        if (pthread_mutex_unlock(&threadPool->mutexEmpty) != 0) {
+            PrintError();
+            _exit(EXIT_FAILURE);
+        }
+    } else {
+        if (pthread_mutex_lock(&threadPool->mutexEmpty) != 0) {
+            PrintError();
+            _exit(EXIT_FAILURE);
+        }
+        threadPool->emptyTheQueue = FALSE; //we wanna continue run tasks from the queue
+
+        if (pthread_mutex_unlock(&threadPool->mutexEmpty) != 0) {
+            PrintError();
+            _exit(EXIT_FAILURE);
+        }
+    }
+
+    //if we need to empty to queue
+    if (threadPool->emptyTheQueue) {
+        //the threadpool need the empty the queue and run all the tasks
+        //wait for all the thread to finish their job.
+        waitForAllThreads(threadPool);
+        threadPool->isDestroyed = TRUE;
+
+        //if there are more mission in the queue, delete them
+        while(!missionQueueEmpty(threadPool)) {
+            free(getMissionFromQueue(threadPool));
+        }
+        //lock the queue
+        if(pthread_mutex_lock(&threadPool->mutexTasksQueueu) != 0) {
+            PrintError();
+        }
+        //destroy the queue
+        osDestroyQueue(threadPool->tasksQueue);
+        threadPool->tasksQueue = NULL;
+        if(pthread_mutex_unlock(&threadPool->mutexTasksQueueu) != 0) {
+            PrintError();
+        }
+
+    } else {
+        waitForAllThreads(threadPool);
+        threadPool->isDestroyed = TRUE;
+    }
+
+    //destroy and free all the mutexes and allocation memory.
+    pthread_cond_destroy(&threadPool->cond);
+    pthread_mutex_destroy(&threadPool->mutexQueue);
+    pthread_mutex_destroy(&threadPool->mutexTasksQueueu);
+    pthread_mutex_destroy(&threadPool->mutexEmpty);
+    free(threadPool->tasksQueue);
+    free(threadPool->threads);
+    free(threadPool);
 }
 
 /**
@@ -189,7 +333,7 @@ int tpInsertTask(ThreadPool *threadPool, void (*computeFunc)(void *), void *para
 
     //wake up thread.
     status = pthread_cond_signal(&threadPool->cond);
-    checkSuccess(threadPool,status);
+    checkSuccess(threadPool, status);
 
     return SUCCESS;
 }

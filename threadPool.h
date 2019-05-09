@@ -1,6 +1,4 @@
-//
-// Created by chagit on 5/9/19.
-//
+//chagit stupel 209089960
 
 #ifndef OS_EX4_2_THREADPOOL_H
 #define OS_EX4_2_THREADPOOL_H
@@ -39,7 +37,7 @@ typedef struct thread_pool {
 
 } ThreadPool;
 
-//struct of a mission witch will the tread run
+//struct of a mission witch the thread runs on
 typedef struct {
     void (*func)(void *);
     void *args;
@@ -52,6 +50,12 @@ typedef struct {
  */
 ThreadPool *tpCreate(int numOfThreads);
 
+/**
+ *
+ * @param threadPool treadPool of the mission
+ * @param shouldWaitForTasks 0-wait until all the tasks will stop running without running the task in the queue
+ * otherwise wait until all the task, also those in the queue, will finish running
+ */
 void tpDestroy(ThreadPool *threadPool, int shouldWaitForTasks);
 
 /**
